@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:tap_tunnel/models/connection_status.dart';
+import 'package:tap_tunnel/services/tap_tunnel_services.dart';
+import 'dart:async';
 import '../models/recent_webhook.dart';
-import '../models/webhook_status.dart.dart';
+import '../models/webhook_status.dart';
 
 class WebhookInspectorPage extends StatefulWidget {
   const WebhookInspectorPage({super.key});
@@ -10,53 +13,115 @@ class WebhookInspectorPage extends StatefulWidget {
 }
 
 class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
+  final TapTunnelService _tapTunnelService = TapTunnelService();
+
   WebhookStatus _webhookStatus = const WebhookStatus(
-    status: 'Listening for webhooks',
-    description: 'https://ghi789.ngrok.io/webhook',
-    url: 'https://ghi789.ngrok.io/webhook',
-    isListening: true,
+    status: 'Connecting to webhook listener...',
+    description: 'Initializing webhook monitoring',
+    url: '',
+    isListening: false,
   );
 
   List<RecentWebhook> _recentWebhooks = [];
   int _selectedNavIndex = 2; // Webhooks tab
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  // Stream subscriptions
+  StreamSubscription<RecentWebhook>? _webhookSubscription;
+  StreamSubscription<ConnectionStatus>? _connectionSubscription;
 
   @override
   void initState() {
     super.initState();
-    _initializeWebhooks();
+    _initializeService();
   }
 
-  void _initializeWebhooks() {
-    final now = DateTime.now();
-    _recentWebhooks = [
-      RecentWebhook(
-        service: 'STRIPE',
-        event: 'payment_intent.succeeded',
-        amount: '\$49.99',
-        customerId: 'Customer: cus_12356',
-        timestamp: now.subtract(const Duration(minutes: 2)),
-        status: WebhookEventStatus.processed,
-        details: 'Payment processed successfully',
-      ),
-      RecentWebhook(
-        service: 'GITHUB',
-        event: 'push',
-        amount: '',
-        customerId: 'myapp • main branch • 3 commits',
-        timestamp: now.subtract(const Duration(minutes: 5)),
-        status: WebhookEventStatus.triggered,
-        details: 'Build triggered successfully',
-      ),
-      RecentWebhook(
-        service: 'SLACK',
-        event: 'message.im',
-        amount: '',
-        customerId: '@john.doe • #dev-alerts',
-        timestamp: now.subtract(const Duration(minutes: 12)),
-        status: WebhookEventStatus.failed,
-        details: 'Message delivery failed',
-      ),
-    ];
+  @override
+  void dispose() {
+    _webhookSubscription?.cancel();
+    _connectionSubscription?.cancel();
+    _tapTunnelService.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeService() async {
+    try {
+      // Listen to real-time webhook events
+      _webhookSubscription = _tapTunnelService.webhooksStream.listen((webhook) {
+        setState(() {
+          _recentWebhooks.insert(0, webhook);
+          // Keep only the last 50 webhooks
+          if (_recentWebhooks.length > 50) {
+            _recentWebhooks = _recentWebhooks.take(50).toList();
+          }
+        });
+      });
+
+      // Listen to connection status changes
+      _connectionSubscription = _tapTunnelService.connectionStream.listen((
+        connectionStatus,
+      ) {
+        setState(() {
+          if (connectionStatus.isConnected) {
+            _webhookStatus = _webhookStatus.copyWith(
+              status: 'Listening for webhooks',
+              description: 'Connected to webhook listener',
+              isListening: true,
+            );
+            _errorMessage = null;
+          } else {
+            _webhookStatus = _webhookStatus.copyWith(
+              status: 'Webhook listener disconnected',
+              description: 'Unable to connect to agent',
+              isListening: false,
+            );
+            _errorMessage = 'Connection lost with Tap Tunnel Agent';
+          }
+        });
+      });
+
+      // Load initial webhook data
+      await _loadWebhookData();
+
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage =
+            'Failed to initialize webhook inspector: ${e.toString()}';
+      });
+    }
+  }
+
+  Future<void> _loadWebhookData() async {
+    try {
+      // Fetch recent webhooks from the service
+      final webhooks = await _tapTunnelService.getWebhooks();
+      if (webhooks != null) {
+        setState(() {
+          _recentWebhooks = webhooks;
+          _errorMessage = null;
+        });
+      }
+
+      // Update webhook status based on service connection
+      if (_tapTunnelService.isConnected) {
+        setState(() {
+          _webhookStatus = _webhookStatus.copyWith(
+            status: 'Listening for webhooks',
+            description: 'Webhook listener is active',
+            isListening: true,
+          );
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load webhook data: ${e.toString()}';
+      });
+    }
   }
 
   void _onViewPayloadDetails() {
@@ -67,6 +132,8 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
   }
 
   void _onWebhookStatusToggle() {
+    // This would typically send a command to the agent to start/stop webhook listening
+    // For now, we'll just toggle the UI state
     setState(() {
       _webhookStatus = _webhookStatus.copyWith(
         isListening: !_webhookStatus.isListening,
@@ -74,6 +141,10 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
             _webhookStatus.isListening
                 ? 'Webhook listener stopped'
                 : 'Listening for webhooks',
+        description:
+            _webhookStatus.isListening
+                ? 'Webhook monitoring paused'
+                : 'Webhook listener is active',
       );
     });
 
@@ -88,27 +159,26 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
     );
   }
 
-  void _onRefreshWebhooks() {
+  Future<void> _onRefreshWebhooks() async {
     setState(() {
-      // Simulate refresh by adding a new webhook
-      final now = DateTime.now();
-      _recentWebhooks.insert(
-        0,
-        RecentWebhook(
-          service: 'STRIPE',
-          event: 'customer.created',
-          amount: '',
-          customerId: 'Customer: cus_${DateTime.now().millisecondsSinceEpoch}',
-          timestamp: now,
-          status: WebhookEventStatus.processed,
-          details: 'New customer created',
-        ),
-      );
+      _isLoading = true;
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Webhooks refreshed')));
+    try {
+      await _loadWebhookData();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Webhooks refreshed')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to refresh: ${e.toString()}')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _onWebhookItemTap(RecentWebhook webhook) {
@@ -117,20 +187,28 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('${webhook.service} - ${webhook.event}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Status: ${webhook.statusText}'),
-              const SizedBox(height: 8),
-              Text('Time: ${webhook.timeAgo}'),
-              const SizedBox(height: 8),
-              Text('Details: ${webhook.details}'),
-              if (webhook.amount!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text('Amount: ${webhook.amount}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDetailRow('Status', webhook.statusText),
+                _buildDetailRow('Time', webhook.timeAgo),
+                _buildDetailRow('Details', webhook.details),
+                if (webhook.amount?.isNotEmpty == true)
+                  _buildDetailRow('Amount', webhook.amount!),
+                if (webhook.customerId?.isNotEmpty == true)
+                  _buildDetailRow('Customer', webhook.customerId!),
+                if (webhook.repository?.isNotEmpty == true)
+                  _buildDetailRow('Repository', webhook.repository!),
+                if (webhook.action?.isNotEmpty == true)
+                  _buildDetailRow('Action', webhook.action!),
+                if (webhook.channel?.isNotEmpty == true)
+                  _buildDetailRow('Channel', webhook.channel!),
+                if (webhook.user?.isNotEmpty == true)
+                  _buildDetailRow('User', webhook.user!),
               ],
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -143,6 +221,23 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
     );
   }
 
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label:',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          const SizedBox(height: 2),
+          Text(value, style: const TextStyle(fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
   void _onNavItemPressed(int index) {
     // Handle navigation based on index
     switch (index) {
@@ -150,7 +245,6 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
         break;
       case 1: // MONITOR
-
         Navigator.pushNamedAndRemoveUntil(
           context,
           '/monitor',
@@ -187,7 +281,7 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
               ),
             ),
             Text(
-              '${_recentWebhooks.where((w) => w.status == WebhookEventStatus.processed).length} Active Tunnels',
+              '${_recentWebhooks.where((w) => w.status == WebhookEventStatus.processed).length} Processed • ${_recentWebhooks.length} Total',
               style: const TextStyle(color: Colors.white70, fontSize: 16),
             ),
           ],
@@ -204,29 +298,84 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         toolbarHeight: 80,
         backgroundColor: Colors.transparent,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
+      body: _buildBody(),
+      bottomNavigationBar: _buildBottomNavigation(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Webhook Status
-            _buildWebhookStatus(),
-
-            const SizedBox(height: 20),
-
-            // Recent Webhooks
-            _buildRecentWebhooks(),
-
-            const SizedBox(height: 20),
-
-            // View Payload Details Button
-            _buildPayloadDetailsButton(),
-
-            const SizedBox(height: 100), // Space for bottom navigation
+            const Icon(Icons.error_outline, size: 64, color: Color(0xFFEF4444)),
+            const SizedBox(height: 16),
+            Text(
+              'Connection Error',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _errorMessage = null;
+                  _isLoading = true;
+                });
+                _initializeService();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+              ),
+              child: const Text('Retry Connection'),
+            ),
           ],
         ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Webhook Status
+          _buildWebhookStatus(),
+
+          const SizedBox(height: 20),
+
+          // Recent Webhooks
+          _buildRecentWebhooks(),
+
+          const SizedBox(height: 20),
+
+          // View Payload Details Button
+          _buildPayloadDetailsButton(),
+
+          const SizedBox(height: 100), // Space for bottom navigation
+        ],
       ),
-      bottomNavigationBar: _buildBottomNavigation(),
     );
   }
 
@@ -246,8 +395,20 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
               ),
             ),
             IconButton(
-              onPressed: _onRefreshWebhooks,
-              icon: const Icon(Icons.refresh),
+              onPressed: _isLoading ? null : _onRefreshWebhooks,
+              icon:
+                  _isLoading
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF6366F1),
+                          ),
+                        ),
+                      )
+                      : const Icon(Icons.refresh),
               iconSize: 20,
             ),
           ],
@@ -277,7 +438,10 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
           ),
           trailing: Switch(
             value: _webhookStatus.isListening,
-            onChanged: (value) => _onWebhookStatusToggle(),
+            onChanged:
+                _tapTunnelService.isConnected
+                    ? (value) => _onWebhookStatusToggle()
+                    : null,
             activeColor: const Color(0xFF10B981),
           ),
           contentPadding: const EdgeInsets.symmetric(
@@ -293,9 +457,9 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Recent Webhooks',
-          style: TextStyle(
+        Text(
+          'Recent Webhooks (${_recentWebhooks.length})',
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
             color: Color(0xFF1F2937),
@@ -303,14 +467,40 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         ),
         const SizedBox(height: 8),
 
-        ..._recentWebhooks
-            .map(
-              (webhook) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: _buildWebhookCard(webhook),
-              ),
-            )
-            .toList(),
+        if (_recentWebhooks.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              children: [
+                Icon(Icons.webhook, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'No webhooks received yet',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Webhook events will appear here when received',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else
+          ..._recentWebhooks
+              .map(
+                (webhook) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _buildWebhookCard(webhook),
+                ),
+              )
+              .toList(),
       ],
     );
   }
@@ -318,69 +508,80 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
   Widget _buildWebhookCard(RecentWebhook webhook) {
     return GestureDetector(
       onTap: () => _onWebhookItemTap(webhook),
-      child: ListTile(
-        leading: Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: webhook.statusColor,
-            shape: BoxShape.circle,
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        elevation: 1,
+        child: ListTile(
+          leading: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: webhook.statusColor,
+              shape: BoxShape.circle,
+            ),
           ),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: webhook.serviceColor,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                webhook.service,
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: webhook.serviceColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  webhook.service,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                webhook.event,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  webhook.event,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (webhook.amount!.isNotEmpty)
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (webhook.amount?.isNotEmpty == true)
+                Text(
+                  webhook.amount!,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF059669),
+                  ),
+                ),
+              if (webhook.customerId?.isNotEmpty == true)
+                Text(
+                  webhook.customerId!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
               Text(
-                webhook.amount!,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF059669),
-                ),
+                '${webhook.timeAgo} • ${webhook.statusText}',
+                style: TextStyle(fontSize: 12, color: webhook.statusColor),
               ),
-            Text(
-              webhook.customerId!,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-            ),
-            Text(
-              '${webhook.timeAgo} • ${webhook.statusText}',
-              style: TextStyle(fontSize: 12, color: webhook.statusColor),
-            ),
-          ],
+            ],
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 4,
+          ),
+          isThreeLine: true,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        isThreeLine: true,
       ),
     );
   }

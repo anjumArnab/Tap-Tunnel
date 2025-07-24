@@ -1,53 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../models/connection_status.dart';
 import '../models/tunnel_preset.dart';
-
-class SettingsService {
-  static final SettingsService _instance = SettingsService._internal();
-  factory SettingsService() => _instance;
-  SettingsService._internal();
-
-  ConnectionStatus getConnectionStatus() {
-    return ConnectionStatus(
-      isConnected: true,
-      deviceName: "MacBook Pro",
-      ipAddress: "192.168.1.100",
-      lastSync:
-          DateTime.now().subtract(const Duration(minutes: 2)).toIso8601String(),
-    );
-  }
-
-  List<TunnelPreset> getTunnelPresets() {
-    return [
-      TunnelPreset(
-        id: "react",
-        name: "React Development",
-        description: "Port 3000, hot reload enabled",
-        port: 3000,
-        isHotReloadEnabled: true,
-        accentColor: Colors.blue,
-      ),
-      TunnelPreset(
-        id: "api",
-        name: "API Server",
-        description: "",
-        port: 8000,
-        isHotReloadEnabled: false,
-        accentColor: Colors.green,
-      ),
-    ];
-  }
-
-  Future<void> disconnectFromDevice() async {
-    // Simulate API call
-    await Future.delayed(const Duration(milliseconds: 500));
-  }
-
-  Future<void> connectToDevice() async {
-    // Simulate API call
-    await Future.delayed(const Duration(milliseconds: 1000));
-  }
-}
+import '../models/active_tunnel.dart';
+import '../services/tap_tunnel_services.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -57,52 +13,208 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  final SettingsService _settingsService = SettingsService();
-  late ConnectionStatus _connectionStatus;
-  late List<TunnelPreset> _tunnelPresets;
+  final TapTunnelService _tunnelService = TapTunnelService();
+  ConnectionStatus? _connectionStatus;
+  List<TunnelPreset> _tunnelPresets = [];
   bool _isLoading = false;
+  bool _isConnecting = false;
+  String? _errorMessage;
   final int _selectedNavIndex = 3;
+
+  // Controllers for connection form
+  final TextEditingController _ipController = TextEditingController(
+    text: '192.168.1.100',
+  );
+  final TextEditingController _portController = TextEditingController(
+    text: '3001',
+  );
+
+  // Stream subscriptions
+  StreamSubscription<ConnectionStatus>? _connectionSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _initializeService();
   }
 
-  void _loadData() {
-    _connectionStatus = _settingsService.getConnectionStatus();
-    _tunnelPresets = _settingsService.getTunnelPresets();
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    _tunnelService.dispose();
+    _ipController.dispose();
+    _portController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initializeService() async {
+    // Setup connection stream listener
+    _connectionSubscription = _tunnelService.connectionStream.listen(
+      (status) {
+        setState(() {
+          _connectionStatus = status;
+          _isConnecting = false;
+        });
+      },
+      onError: (error) {
+        print('Connection stream error: $error');
+        setState(() {
+          _isConnecting = false;
+        });
+      },
+    );
+
+    // Try to get current connection status
+    _connectionStatus = _tunnelService.connectionStatus;
+
+    // Load presets if connected
+    if (_connectionStatus?.isConnected == true) {
+      await _loadPresets();
+    }
+  }
+
+  Future<void> _loadPresets() async {
+    try {
+      final presets = await _tunnelService.getPresets();
+      if (presets != null) {
+        setState(() {
+          _tunnelPresets = presets;
+        });
+      }
+    } catch (e) {
+      print('Error loading presets: $e');
+      // Use default presets if API fails
+      _setDefaultPresets();
+    }
+  }
+
+  void _setDefaultPresets() {
+    setState(() {
+      _tunnelPresets = [
+        TunnelPreset(
+          id: "react",
+          name: "React Development",
+          description: "Port 3000, hot reload enabled",
+          port: 3000,
+          isHotReloadEnabled: true,
+          accentColor: Colors.blue,
+        ),
+        TunnelPreset(
+          id: "api",
+          name: "API Server",
+          description: "Port 8000, production API",
+          port: 8000,
+          isHotReloadEnabled: false,
+          accentColor: Colors.green,
+        ),
+        TunnelPreset(
+          id: "nextjs",
+          name: "Next.js App",
+          description: "Port 3000, full-stack development",
+          port: 3000,
+          isHotReloadEnabled: true,
+          accentColor: Colors.purple,
+        ),
+      ];
+    });
   }
 
   Future<void> _toggleConnection() async {
+    if (_isConnecting) return;
+
     setState(() {
-      _isLoading = true;
+      _isConnecting = true;
+      _errorMessage = null;
     });
 
     try {
-      if (_connectionStatus.isConnected) {
-        await _settingsService.disconnectFromDevice();
-      } else {
-        await _settingsService.connectToDevice();
-      }
+      if (_connectionStatus?.isConnected == true) {
+        // Disconnect (there's no explicit disconnect method, so we'll just dispose)
+        _tunnelService.dispose();
+        setState(() {
+          _connectionStatus = null;
+          _tunnelPresets = [];
+          _isConnecting = false;
+        });
 
-      // Reload connection status
-      _loadData();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _connectionStatus.isConnected
-                ? 'Disconnected successfully'
-                : 'Connected successfully',
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Disconnected successfully'),
+            backgroundColor: Colors.orange,
           ),
-          backgroundColor: Colors.green,
-        ),
-      );
+        );
+      } else {
+        // Connect
+        final ip = _ipController.text.trim();
+        final port = int.tryParse(_portController.text.trim()) ?? 3001;
+
+        if (ip.isEmpty) {
+          throw Exception('IP address is required');
+        }
+
+        final connected = await _tunnelService.connect(ip, port: port);
+
+        if (connected) {
+          await _loadPresets();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connected successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          throw Exception('Failed to connect to Tap Tunnel Agent');
+        }
+      }
     } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isConnecting = false;
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Connection failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _startTunnelFromPreset(TunnelPreset preset) async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      ActiveTunnel? tunnel;
+
+      // Try to start from preset first, fallback to manual creation
+      try {
+        tunnel = await _tunnelService.startTunnelFromPreset(preset.id);
+      } catch (e) {
+        // Fallback to manual tunnel creation
+        tunnel = await _tunnelService.startTunnel(
+          port: preset.port,
+          name: preset.name,
+          protocol: preset.protocol ?? 'http',
+        );
+      }
+
+      if (tunnel != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Started tunnel: ${preset.name}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        throw Exception('Failed to start tunnel');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start tunnel: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -110,6 +222,183 @@ class _SettingsState extends State<Settings> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  void _showCreatePresetDialog() {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final portController = TextEditingController();
+    bool isHotReloadEnabled = false;
+    Color selectedColor = Colors.blue;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Create Tunnel Preset'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Preset Name',
+                        hintText: 'e.g., React Dev Server',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        hintText: 'Optional description',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: portController,
+                      decoration: const InputDecoration(
+                        labelText: 'Port',
+                        hintText: 'e.g., 3000',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      title: const Text('Enable Hot Reload'),
+                      value: isHotReloadEnabled,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          isHotReloadEnabled = value ?? false;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Accent Color:'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children:
+                          [
+                            Colors.blue,
+                            Colors.green,
+                            Colors.purple,
+                            Colors.orange,
+                            Colors.red,
+                            Colors.teal,
+                          ].map((color) {
+                            return GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedColor = color;
+                                });
+                              },
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                  border:
+                                      selectedColor == color
+                                          ? Border.all(
+                                            color: Colors.black,
+                                            width: 2,
+                                          )
+                                          : null,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final name = nameController.text.trim();
+                    final port = int.tryParse(portController.text.trim());
+
+                    if (name.isNotEmpty && port != null) {
+                      Navigator.of(context).pop();
+                      await _createPreset(
+                        name: name,
+                        description: descriptionController.text.trim(),
+                        port: port,
+                        isHotReloadEnabled: isHotReloadEnabled,
+                        accentColor: selectedColor,
+                      );
+                    }
+                  },
+                  child: const Text('Create'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _createPreset({
+    required String name,
+    required String description,
+    required int port,
+    required bool isHotReloadEnabled,
+    required Color accentColor,
+  }) async {
+    try {
+      final preset = TunnelPreset(
+        id: name.toLowerCase().replaceAll(' ', '_'),
+        name: name,
+        description: description,
+        port: port,
+        isHotReloadEnabled: isHotReloadEnabled,
+        accentColor: accentColor,
+      );
+
+      final createdPreset = await _tunnelService.createPreset(preset);
+
+      if (createdPreset != null) {
+        setState(() {
+          _tunnelPresets.add(createdPreset);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Preset "$name" created successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Add locally if API fails
+        setState(() {
+          _tunnelPresets.add(preset);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Preset "$name" created locally'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to create preset: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -132,7 +421,6 @@ class _SettingsState extends State<Settings> {
   void _onNavItemPressed(int index) {
     switch (index) {
       case 0: // HOME
-
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
         break;
       case 1: // MONITOR
@@ -172,7 +460,9 @@ class _SettingsState extends State<Settings> {
               ),
             ),
             Text(
-              'Tunnel Configuration',
+              _connectionStatus?.isConnected == true
+                  ? 'Connected to ${_connectionStatus!.deviceName}'
+                  : 'Not Connected',
               style: const TextStyle(color: Colors.white70, fontSize: 16),
             ),
           ],
@@ -197,10 +487,19 @@ class _SettingsState extends State<Settings> {
             _buildConnectionSection(),
             const SizedBox(height: 20),
             _buildTunnelPresetsSection(),
+            const SizedBox(height: 100), // Space for bottom navigation
           ],
         ),
       ),
       bottomNavigationBar: _buildBottomNavigation(),
+      floatingActionButton:
+          _connectionStatus?.isConnected == true
+              ? FloatingActionButton(
+                onPressed: _showCreatePresetDialog,
+                backgroundColor: const Color(0xFF6366F1),
+                child: const Icon(Icons.add, color: Colors.white),
+              )
+              : null,
     );
   }
 
@@ -226,6 +525,55 @@ class _SettingsState extends State<Settings> {
           ),
           child: Column(
             children: [
+              if (_connectionStatus?.isConnected != true) ...[
+                // Connection form when disconnected
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _ipController,
+                        decoration: const InputDecoration(
+                          labelText: 'IP Address',
+                          hintText: '192.168.1.100',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 1,
+                      child: TextField(
+                        controller: _portController,
+                        decoration: const InputDecoration(
+                          labelText: 'Port',
+                          hintText: '3001',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 12),
+              ],
+
+              // Connection status row
               Row(
                 children: [
                   Container(
@@ -233,7 +581,7 @@ class _SettingsState extends State<Settings> {
                     height: 12,
                     decoration: BoxDecoration(
                       color:
-                          _connectionStatus.isConnected
+                          _connectionStatus?.isConnected == true
                               ? Colors.green
                               : Colors.red,
                       shape: BoxShape.circle,
@@ -245,8 +593,8 @@ class _SettingsState extends State<Settings> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _connectionStatus.isConnected
-                              ? 'Connected to ${_connectionStatus.deviceName}'
+                          _connectionStatus?.isConnected == true
+                              ? 'Connected to ${_connectionStatus!.deviceName}'
                               : 'Disconnected',
                           style: const TextStyle(
                             fontSize: 15,
@@ -254,17 +602,17 @@ class _SettingsState extends State<Settings> {
                             color: Color(0xFF1F2937),
                           ),
                         ),
-                        if (_connectionStatus.isConnected) ...[
+                        if (_connectionStatus?.isConnected == true) ...[
                           const SizedBox(height: 4),
                           Text(
-                            '${_connectionStatus.deviceName} • ${_connectionStatus.ipAddress}',
+                            '${_connectionStatus!.deviceName} • ${_connectionStatus!.ipAddress}',
                             style: const TextStyle(
                               fontSize: 13,
                               color: Color(0xFF6B7280),
                             ),
                           ),
                           Text(
-                            'Last sync: ${_getTimeAgo(_connectionStatus.lastSync)}',
+                            'Last sync: ${_getTimeAgo(_connectionStatus!.lastSync)}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: Color(0xFF9CA3AF),
@@ -274,7 +622,7 @@ class _SettingsState extends State<Settings> {
                       ],
                     ),
                   ),
-                  if (_isLoading)
+                  if (_isConnecting)
                     const SizedBox(
                       width: 20,
                       height: 20,
@@ -294,14 +642,14 @@ class _SettingsState extends State<Settings> {
                           vertical: 6,
                         ),
                         backgroundColor:
-                            _connectionStatus.isConnected
+                            _connectionStatus?.isConnected == true
                                 ? Colors.red.withOpacity(0.1)
                                 : Colors.green.withOpacity(0.1),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
                           side: BorderSide(
                             color:
-                                _connectionStatus.isConnected
+                                _connectionStatus?.isConnected == true
                                     ? Colors.red
                                     : Colors.green,
                             width: 1,
@@ -309,12 +657,12 @@ class _SettingsState extends State<Settings> {
                         ),
                       ),
                       child: Text(
-                        _connectionStatus.isConnected
+                        _connectionStatus?.isConnected == true
                             ? 'DISCONNECT'
                             : 'CONNECT',
                         style: TextStyle(
                           color:
-                              _connectionStatus.isConnected
+                              _connectionStatus?.isConnected == true
                                   ? Colors.red
                                   : Colors.green,
                           fontSize: 11,
@@ -335,22 +683,57 @@ class _SettingsState extends State<Settings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Tunnel Presets',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1F2937),
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Tunnel Presets',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            if (_connectionStatus?.isConnected == true)
+              TextButton.icon(
+                onPressed: _showCreatePresetDialog,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF6366F1),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
-        ..._tunnelPresets.map((preset) => _buildTunnelPresetCard(preset)),
+
+        if (_tunnelPresets.isEmpty)
+          Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 32),
+                const Icon(Icons.settings, size: 48, color: Color(0xFF9CA3AF)),
+                const SizedBox(height: 8),
+                const Text(
+                  'No presets available',
+                  style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
+                ),
+                if (_connectionStatus?.isConnected != true)
+                  const Text(
+                    'Connect to agent to manage presets',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
+                  ),
+              ],
+            ),
+          )
+        else
+          ..._tunnelPresets.map((preset) => _buildTunnelPresetCard(preset)),
       ],
     );
   }
 
   Widget _buildTunnelPresetCard(TunnelPreset preset) {
-    return Container(
+    return Card(
       margin: const EdgeInsets.only(bottom: 4),
       child: ListTile(
         leading: Container(
@@ -360,7 +743,10 @@ class _SettingsState extends State<Settings> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
-            preset.id.toUpperCase(),
+            preset.id.toUpperCase().substring(
+              0,
+              preset.id.length > 3 ? 3 : preset.id.length,
+            ),
             style: TextStyle(
               color: preset.accentColor,
               fontSize: 11,
@@ -376,21 +762,50 @@ class _SettingsState extends State<Settings> {
             color: Color(0xFF1F2937),
           ),
         ),
-        subtitle:
-            preset.description.isNotEmpty
-                ? Text(
-                  preset.description,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF6B7280),
-                  ),
-                )
-                : null,
-        trailing: const Icon(
-          Icons.arrow_forward_ios,
-          color: Color(0xFF9CA3AF),
-          size: 16,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (preset.description.isNotEmpty)
+              Text(
+                preset.description,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              ),
+            Text(
+              'Port ${preset.port}${preset.isHotReloadEnabled ? ' • Hot Reload' : ''}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+            ),
+          ],
         ),
+        trailing:
+            _connectionStatus?.isConnected == true
+                ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isLoading)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      TextButton(
+                        onPressed: () => _startTunnelFromPreset(preset),
+                        child: const Text(
+                          'START',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ),
+                  ],
+                )
+                : const Icon(
+                  Icons.arrow_forward_ios,
+                  color: Color(0xFF9CA3AF),
+                  size: 16,
+                ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       ),
     );
@@ -411,7 +826,7 @@ class _SettingsState extends State<Settings> {
           navItems
               .map(
                 (label) => BottomNavigationBarItem(
-                  icon: const SizedBox.shrink(), // Empty icon
+                  icon: const SizedBox.shrink(),
                   label: label,
                 ),
               )
