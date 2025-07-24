@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/webhook.dart';
+import '../models/recent_webhook.dart';
+import '../models/webhook_status.dart.dart';
 
 class WebhookInspectorPage extends StatefulWidget {
   const WebhookInspectorPage({super.key});
@@ -125,7 +126,7 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
               Text('Time: ${webhook.timeAgo}'),
               const SizedBox(height: 8),
               Text('Details: ${webhook.details}'),
-              if (webhook.amount.isNotEmpty) ...[
+              if (webhook.amount!.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text('Amount: ${webhook.amount}'),
               ],
@@ -359,9 +360,9 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (webhook.amount.isNotEmpty)
+            if (webhook.amount!.isNotEmpty)
               Text(
-                webhook.amount,
+                webhook.amount!,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -369,7 +370,7 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
                 ),
               ),
             Text(
-              webhook.customerId,
+              webhook.customerId!,
               style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
             ),
             Text(

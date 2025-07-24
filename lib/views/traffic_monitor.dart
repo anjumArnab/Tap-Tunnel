@@ -2,7 +2,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../models/traffic_monitor.dart';
+import '../models/request_data.dart';
+import '../models/traffic_stats.dart';
+import '../models/chart_data.dart';
 
 class TrafficMonitorScreen extends StatefulWidget {
   const TrafficMonitorScreen({super.key});

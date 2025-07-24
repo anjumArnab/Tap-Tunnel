@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/settings.dart';
+import '../models/connection_status.dart';
+import '../models/tunnel_preset.dart';
 
 class SettingsService {
   static final SettingsService _instance = SettingsService._internal();
@@ -11,7 +12,8 @@ class SettingsService {
       isConnected: true,
       deviceName: "MacBook Pro",
       ipAddress: "192.168.1.100",
-      lastSync: DateTime.now().subtract(const Duration(minutes: 2)),
+      lastSync:
+          DateTime.now().subtract(const Duration(minutes: 2)).toIso8601String(),
     );
   }
 
@@ -111,14 +113,19 @@ class _SettingsState extends State<Settings> {
     }
   }
 
-  String _getTimeAgo(DateTime dateTime) {
-    final difference = DateTime.now().difference(dateTime);
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} minutes ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hours ago';
-    } else {
-      return '${difference.inDays} days ago';
+  String _getTimeAgo(String dateTimeString) {
+    try {
+      final dateTime = DateTime.parse(dateTimeString);
+      final difference = DateTime.now().difference(dateTime);
+      if (difference.inMinutes < 60) {
+        return '${difference.inMinutes} minutes ago';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours} hours ago';
+      } else {
+        return '${difference.inDays} days ago';
+      }
+    } catch (e) {
+      return 'Unknown';
     }
   }
 
