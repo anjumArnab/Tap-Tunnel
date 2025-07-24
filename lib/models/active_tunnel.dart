@@ -6,6 +6,9 @@ class ActiveTunnel {
   final int tunnelPort;
   final int requests;
   final bool isActive;
+  final String? protocol;
+  final String? createdAt;
+  final Map<String, dynamic>? metrics;
 
   const ActiveTunnel({
     required this.tunnelName,
@@ -13,25 +16,34 @@ class ActiveTunnel {
     required this.tunnelPort,
     required this.requests,
     this.isActive = true,
+    this.protocol,
+    this.createdAt,
+    this.metrics,
   });
 
-  factory ActiveTunnel.fromMap(Map<String, dynamic> map) {
+  factory ActiveTunnel.fromJson(Map<String, dynamic> map) {
     return ActiveTunnel(
       tunnelName: map['tunnelName'] ?? '',
       tunnelUrl: map['tunnelUrl'] ?? '',
       tunnelPort: map['tunnelPort'] ?? 0,
       requests: map['requests'] ?? 0,
       isActive: map['isActive'] ?? true,
+      protocol: map['protocol'],
+      createdAt: map['createdAt'],
+      metrics: map['metrics'],
     );
   }
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toJson() {
     return {
       'tunnelName': tunnelName,
       'tunnelUrl': tunnelUrl,
       'tunnelPort': tunnelPort,
       'requests': requests,
       'isActive': isActive,
+      'protocol': protocol,
+      'createdAt': createdAt,
+      'metrics': metrics,
     };
   }
 
@@ -41,6 +53,9 @@ class ActiveTunnel {
     int? tunnelPort,
     int? requests,
     bool? isActive,
+    String? protocol,
+    String? createdAt,
+    Map<String, dynamic>? metrics,
   }) {
     return ActiveTunnel(
       tunnelName: tunnelName ?? this.tunnelName,
@@ -48,6 +63,9 @@ class ActiveTunnel {
       tunnelPort: tunnelPort ?? this.tunnelPort,
       requests: requests ?? this.requests,
       isActive: isActive ?? this.isActive,
+      protocol: protocol ?? this.protocol,
+      createdAt: createdAt ?? this.createdAt,
+      metrics: metrics ?? this.metrics,
     );
   }
 
@@ -60,30 +78,5 @@ class ActiveTunnel {
   String get requestsText {
     if (requests == 0) return 'Idle';
     return '$requests requests';
-  }
-
-  @override
-  String toString() {
-    return 'ActiveTunnel(tunnelName: $tunnelName, tunnelUrl: $tunnelUrl, tunnelPort: $tunnelPort, requests: $requests, isActive: $isActive)';
-  }
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is ActiveTunnel &&
-        other.tunnelName == tunnelName &&
-        other.tunnelUrl == tunnelUrl &&
-        other.tunnelPort == tunnelPort &&
-        other.requests == requests &&
-        other.isActive == isActive;
-  }
-
-  @override
-  int get hashCode {
-    return tunnelName.hashCode ^
-        tunnelUrl.hashCode ^
-        tunnelPort.hashCode ^
-        requests.hashCode ^
-        isActive.hashCode;
   }
 }
