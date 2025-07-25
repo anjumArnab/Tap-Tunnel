@@ -24,12 +24,11 @@ class _HomepageState extends State<Homepage> {
 
   bool _isLoading = true;
   String? _errorMessage;
-  bool _isConnected = false; // Track connection state
 
   @override
   void initState() {
     super.initState();
-    _initializeService();
+    _setupStreamListeners();
   }
 
   @override
@@ -38,37 +37,6 @@ class _HomepageState extends State<Homepage> {
     _connectionSubscription?.cancel();
     _tunnelService.dispose();
     super.dispose();
-  }
-
-  Future<void> _initializeService() async {
-    try {
-      // Listen to real-time streams
-      _setupStreamListeners();
-
-      // Try to connect to the service
-      // You might want to get this IP from settings or user input
-      final connected = await _tunnelService.connect('192.168.1.100');
-
-      setState(() {
-        _isConnected = connected;
-        _isLoading = false;
-      });
-
-      if (connected) {
-        // Fetch initial data
-        await _loadInitialData();
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to connect to Tap Tunnel Agent';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error initializing service: $e';
-        _isLoading = false;
-        _isConnected = false;
-      });
-    }
   }
 
   void _setupStreamListeners() {
@@ -90,7 +58,6 @@ class _HomepageState extends State<Homepage> {
       (status) {
         setState(() {
           _connectionStatus = status;
-          _isConnected = status.isConnected;
         });
       },
       onError: (error) {
@@ -99,27 +66,9 @@ class _HomepageState extends State<Homepage> {
     );
   }
 
-  Future<void> _loadInitialData() async {
-    try {
-      // Load tunnels
-      final tunnels = await _tunnelService.getTunnels();
-      if (tunnels != null) {
-        setState(() {
-          _activeTunnels = tunnels;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error loading data: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
   Future<void> _onNewTunnelPressed() async {
     // Check if connected before allowing tunnel creation
-    if (!_isConnected) {
+    if (_connectionStatus?.isConnected != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please connect to Tap Tunnel Agent first'),
@@ -204,7 +153,7 @@ class _HomepageState extends State<Homepage> {
 
   Future<void> _onStopAllTunnelsPressed() async {
     // Check if connected before allowing tunnel operations
-    if (!_isConnected) {
+    if (_connectionStatus?.isConnected != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please connect to Tap Tunnel Agent first'),
@@ -410,7 +359,7 @@ class _HomepageState extends State<Homepage> {
         ListTile(
           leading: CircleAvatar(
             backgroundColor:
-                _isConnected
+                (_connectionStatus?.isConnected == true)
                     ? const Color(0xFF10B981)
                     : const Color(0xFF9CA3AF),
             radius: 16,
@@ -422,13 +371,13 @@ class _HomepageState extends State<Homepage> {
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color:
-                  _isConnected
+                  (_connectionStatus?.isConnected == true)
                       ? const Color(0xFF1F2937)
                       : const Color(0xFF9CA3AF),
             ),
           ),
           subtitle: Text(
-            _isConnected
+            (_connectionStatus?.isConnected == true)
                 ? 'Create a new development tunnel'
                 : 'Connect to agent to create tunnels',
             style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
@@ -444,7 +393,7 @@ class _HomepageState extends State<Homepage> {
         ListTile(
           leading: CircleAvatar(
             backgroundColor:
-                _isConnected
+                (_connectionStatus?.isConnected == true)
                     ? const Color(0xFFEF4444)
                     : const Color(0xFF9CA3AF),
             radius: 16,
@@ -456,13 +405,13 @@ class _HomepageState extends State<Homepage> {
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color:
-                  _isConnected
+                  (_connectionStatus?.isConnected == true)
                       ? const Color(0xFF1F2937)
                       : const Color(0xFF9CA3AF),
             ),
           ),
           subtitle: Text(
-            _isConnected
+            (_connectionStatus?.isConnected == true)
                 ? 'Disconnect all active connections'
                 : 'Connect to agent to manage tunnels',
             style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
@@ -492,7 +441,7 @@ class _HomepageState extends State<Homepage> {
         const SizedBox(height: 8),
 
         // Show different content based on connection status
-        if (!_isConnected)
+        if (_connectionStatus?.isConnected != true)
           // Not connected - show connection message
           Center(
             child: Column(

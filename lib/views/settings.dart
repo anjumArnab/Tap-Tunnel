@@ -492,14 +492,6 @@ class _SettingsState extends State<Settings> {
         ),
       ),
       bottomNavigationBar: _buildBottomNavigation(),
-      floatingActionButton:
-          _connectionStatus?.isConnected == true
-              ? FloatingActionButton(
-                onPressed: _showCreatePresetDialog,
-                backgroundColor: const Color(0xFF6366F1),
-                child: const Icon(Icons.add, color: Colors.white),
-              )
-              : null,
     );
   }
 
@@ -733,81 +725,78 @@ class _SettingsState extends State<Settings> {
   }
 
   Widget _buildTunnelPresetCard(TunnelPreset preset) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: preset.accentColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            preset.id.toUpperCase().substring(
-              0,
-              preset.id.length > 3 ? 3 : preset.id.length,
-            ),
-            style: TextStyle(
-              color: preset.accentColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: preset.accentColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
         ),
-        title: Text(
-          preset.name,
-          style: const TextStyle(
-            fontSize: 15,
+        child: Text(
+          preset.id.toUpperCase().substring(
+            0,
+            preset.id.length > 3 ? 3 : preset.id.length,
+          ),
+          style: TextStyle(
+            color: preset.accentColor,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
           ),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (preset.description.isNotEmpty)
-              Text(
-                preset.description,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
-              ),
-            Text(
-              'Port ${preset.port}${preset.isHotReloadEnabled ? ' • Hot Reload' : ''}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
-            ),
-          ],
+      ),
+      title: Text(
+        preset.name,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1F2937),
         ),
-        trailing:
-            _connectionStatus?.isConnected == true
-                ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isLoading)
-                      const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else
-                      TextButton(
-                        onPressed: () => _startTunnelFromPreset(preset),
-                        child: const Text(
-                          'START',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF10B981),
-                          ),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (preset.description.isNotEmpty)
+            Text(
+              preset.description,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+            ),
+          Text(
+            'Port ${preset.port}${preset.isHotReloadEnabled ? ' • Hot Reload' : ''}',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+          ),
+        ],
+      ),
+      trailing:
+          _connectionStatus?.isConnected == true
+              ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isLoading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    TextButton(
+                      onPressed: () => _startTunnelFromPreset(preset),
+                      child: const Text(
+                        'START',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF10B981),
                         ),
                       ),
-                  ],
-                )
-                : const Icon(
-                  Icons.arrow_forward_ios,
-                  color: Color(0xFF9CA3AF),
-                  size: 16,
-                ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      ),
+                    ),
+                ],
+              )
+              : const Icon(
+                Icons.arrow_forward_ios,
+                color: Color(0xFF9CA3AF),
+                size: 16,
+              ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     );
   }
 
