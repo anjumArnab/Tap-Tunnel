@@ -287,24 +287,34 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
         ),
         toolbarHeight: 80,
         backgroundColor: Colors.transparent,
-        actions: [
-          IconButton(
-            onPressed: _isLoading ? null : _refreshData,
-            icon:
-                _isLoading
-                    ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                    : const Icon(Icons.refresh),
-          ),
-        ],
       ),
       body: _buildBody(),
+      floatingActionButton: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          shape: BoxShape.circle,
+        ),
+        child: FloatingActionButton(
+          onPressed: _isLoading ? null : _refreshData,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child:
+              _isLoading
+                  ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                  : const Icon(Icons.refresh, color: Colors.white),
+        ),
+      ),
       bottomNavigationBar: _buildBottomNavigation(),
     );
   }
@@ -390,73 +400,66 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_stats.totalRequests}',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1F2937),
-                      ),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_stats.totalRequests}',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1F2937),
                     ),
-                    const Text(
-                      'Total Requests',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                  ),
+                  const Text(
+                    'Total Requests',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_stats.improvementPercentage} vs yesterday',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF10B981),
+                      fontWeight: FontWeight.w500,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${_stats.improvementPercentage} vs yesterday',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF10B981),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _stats.avgResponseTime,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1F2937),
-                      ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _stats.avgResponseTime,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1F2937),
                     ),
-                    const Text(
-                      'Avg Response Time',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                  ),
+                  const Text(
+                    'Avg Response Time',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _getResponseTimeImprovement(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _getResponseTimeColor(),
+                      fontWeight: FontWeight.w500,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _getResponseTimeImprovement(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _getResponseTimeColor(),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
@@ -488,96 +491,86 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: SizedBox(
-            height: 180,
-            child:
-                _chartData.isEmpty
-                    ? const Center(
-                      child: Text(
-                        'No request data available',
-                        style: TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontSize: 14,
+        SizedBox(
+          height: 180,
+          child:
+              _chartData.isEmpty
+                  ? const Center(
+                    child: Text(
+                      'No request data available',
+                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                    ),
+                  )
+                  : BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: _getMaxYValue(),
+                      barTouchData: BarTouchData(
+                        enabled: true,
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                            if (groupIndex < _chartData.length) {
+                              final data = _chartData[groupIndex];
+                              return BarTooltipItem(
+                                '${data.time}\n${data.value.toInt()} requests',
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              );
+                            }
+                            return null;
+                          },
                         ),
                       ),
-                    )
-                    : BarChart(
-                      BarChartData(
-                        alignment: BarChartAlignment.spaceAround,
-                        maxY: _getMaxYValue(),
-                        barTouchData: BarTouchData(
-                          enabled: true,
-                          touchTooltipData: BarTouchTooltipData(
-                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                              if (groupIndex < _chartData.length) {
-                                final data = _chartData[groupIndex];
-                                return BarTooltipItem(
-                                  '${data.time}\n${data.value.toInt()} requests',
-                                  const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (value, meta) {
+                              if (value.toInt() < _chartData.length) {
+                                return Text(
+                                  _chartData[value.toInt()].time,
+                                  style: const TextStyle(
+                                    color: Color(0xFF6B7280),
+                                    fontSize: 12,
                                   ),
                                 );
                               }
-                              return null;
+                              return const Text('');
                             },
+                            reservedSize: 30,
                           ),
                         ),
-                        titlesData: FlTitlesData(
-                          show: true,
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              getTitlesWidget: (value, meta) {
-                                if (value.toInt() < _chartData.length) {
-                                  return Text(
-                                    _chartData[value.toInt()].time,
-                                    style: const TextStyle(
-                                      color: Color(0xFF6B7280),
-                                      fontSize: 12,
-                                    ),
-                                  );
-                                }
-                                return const Text('');
-                              },
-                              reservedSize: 30,
-                            ),
-                          ),
-                          leftTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          topTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          rightTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
+                        leftTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
                         ),
-                        borderData: FlBorderData(show: false),
-                        gridData: const FlGridData(show: false),
-                        barGroups:
-                            _chartData.asMap().entries.map((entry) {
-                              return BarChartGroupData(
-                                x: entry.key,
-                                barRods: [
-                                  BarChartRodData(
-                                    toY: entry.value.value,
-                                    color: const Color(0xFF6366F1),
-                                    width: 24,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
                       ),
+                      borderData: FlBorderData(show: false),
+                      gridData: const FlGridData(show: false),
+                      barGroups:
+                          _chartData.asMap().entries.map((entry) {
+                            return BarChartGroupData(
+                              x: entry.key,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: entry.value.value,
+                                  color: const Color(0xFF6366F1),
+                                  width: 24,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ],
+                            );
+                          }).toList(),
                     ),
-          ),
+                  ),
         ),
       ],
     );
@@ -730,7 +723,7 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
       case 'POST':
         return const Color(0xFF10B981); // Green
       case 'PUT':
-        return const Color(0xFFF59E0B); // Orange
+        return const Color(0xFDF59E0B); // Orange
       case 'DELETE':
         return const Color(0xFFEF4444); // Red
       case 'PATCH':
