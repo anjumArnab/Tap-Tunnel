@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/tap_tunnel_services.dart';
+import '../services/persistent_connection_service.dart';
 import 'dart:async';
 import '../models/active_tunnel.dart';
 import '../models/connection_status.dart';
@@ -13,7 +13,8 @@ class Homepage extends StatefulWidget {
 }
 
 class _HomepageState extends State<Homepage> {
-  final TapTunnelService _tunnelService = TapTunnelService();
+  final PersistentConnectionService _persistentService =
+      PersistentConnectionService();
   List<ActiveTunnel> _activeTunnels = [];
   ConnectionStatus? _connectionStatus;
   final int _selectedNavIndex = 0;
@@ -28,20 +29,44 @@ class _HomepageState extends State<Homepage> {
   @override
   void initState() {
     super.initState();
-    _setupStreamListeners();
+    _initializeService();
   }
 
   @override
   void dispose() {
     _tunnelsSubscription?.cancel();
     _connectionSubscription?.cancel();
-    _tunnelService.dispose();
+    // Don't dispose the persistent service - it's a singleton
     super.dispose();
   }
 
+  Future<void> _initializeService() async {
+    // Initialize the persistent service if not already done
+    await _persistentService.initialize();
+
+    // Set up stream listeners
+    _setupStreamListeners();
+
+    // Get initial state
+    setState(() {
+      _connectionStatus = _persistentService.connectionStatus;
+      _isLoading = false;
+    });
+
+    // Load initial tunnels if connected
+    if (_persistentService.isConnected) {
+      final tunnels = await _persistentService.getTunnels();
+      if (tunnels != null) {
+        setState(() {
+          _activeTunnels = tunnels;
+        });
+      }
+    }
+  }
+
   void _setupStreamListeners() {
-    // Listen to tunnel updates
-    _tunnelsSubscription = _tunnelService.tunnelsStream.listen(
+    // Listen to tunnel updates from persistent service
+    _tunnelsSubscription = _persistentService.tunnelsStream.listen(
       (tunnels) {
         setState(() {
           _activeTunnels = tunnels;
@@ -53,8 +78,8 @@ class _HomepageState extends State<Homepage> {
       },
     );
 
-    // Listen to connection status
-    _connectionSubscription = _tunnelService.connectionStream.listen(
+    // Listen to connection status from persistent service
+    _connectionSubscription = _persistentService.connectionStream.listen(
       (status) {
         setState(() {
           _connectionStatus = status;
@@ -133,7 +158,10 @@ class _HomepageState extends State<Homepage> {
 
   Future<void> _createTunnel(int port, String name) async {
     try {
-      final tunnel = await _tunnelService.startTunnel(port: port, name: name);
+      final tunnel = await _persistentService.startTunnel(
+        port: port,
+        name: name,
+      );
 
       if (tunnel != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -166,7 +194,7 @@ class _HomepageState extends State<Homepage> {
       // Stop all active tunnels
       final futures = _activeTunnels
           .where((tunnel) => tunnel.isActive)
-          .map((tunnel) => _tunnelService.stopTunnel(tunnel.tunnelName));
+          .map((tunnel) => _persistentService.stopTunnel(tunnel.tunnelName));
 
       await Future.wait(futures);
 
@@ -195,7 +223,7 @@ class _HomepageState extends State<Homepage> {
 
   Future<void> _onStopTunnel(ActiveTunnel tunnel) async {
     try {
-      final success = await _tunnelService.stopTunnel(tunnel.tunnelName);
+      final success = await _persistentService.stopTunnel(tunnel.tunnelName);
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Tunnel "${tunnel.tunnelName}" stopped')),

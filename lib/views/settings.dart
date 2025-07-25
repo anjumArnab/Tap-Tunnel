@@ -3,7 +3,7 @@ import 'dart:async';
 import '../models/connection_status.dart';
 import '../models/tunnel_preset.dart';
 import '../models/active_tunnel.dart';
-import '../services/tap_tunnel_services.dart';
+import '../services/persistent_connection_service.dart'; // Import the persistent service
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -13,7 +13,10 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  final TapTunnelService _tunnelService = TapTunnelService();
+  // Use the persistent service instead of creating a new instance
+  final PersistentConnectionService _persistentService =
+      PersistentConnectionService();
+
   ConnectionStatus? _connectionStatus;
   List<TunnelPreset> _tunnelPresets = [];
   bool _isLoading = false;
@@ -40,16 +43,20 @@ class _SettingsState extends State<Settings> {
 
   @override
   void dispose() {
+    // Only dispose of local resources, not the persistent service
     _connectionSubscription?.cancel();
-    _tunnelService.dispose();
     _ipController.dispose();
     _portController.dispose();
     super.dispose();
+    // DO NOT call _persistentService.dispose() here!
   }
 
   Future<void> _initializeService() async {
+    // Initialize the persistent service if not already initialized
+    await _persistentService.initialize();
+
     // Setup connection stream listener
-    _connectionSubscription = _tunnelService.connectionStream.listen(
+    _connectionSubscription = _persistentService.connectionStream.listen(
       (status) {
         setState(() {
           _connectionStatus = status;
@@ -64,18 +71,21 @@ class _SettingsState extends State<Settings> {
       },
     );
 
-    // Try to get current connection status
-    _connectionStatus = _tunnelService.connectionStatus;
+    // Get current connection status
+    _connectionStatus = _persistentService.connectionStatus;
 
     // Load presets if connected
     if (_connectionStatus?.isConnected == true) {
       await _loadPresets();
     }
+
+    // Update UI with current state
+    setState(() {});
   }
 
   Future<void> _loadPresets() async {
     try {
-      final presets = await _tunnelService.getPresets();
+      final presets = await _persistentService.getPresets();
       if (presets != null) {
         setState(() {
           _tunnelPresets = presets;
@@ -129,8 +139,8 @@ class _SettingsState extends State<Settings> {
 
     try {
       if (_connectionStatus?.isConnected == true) {
-        // Disconnect (there's no explicit disconnect method, so we'll just dispose)
-        _tunnelService.dispose();
+        // Disconnect using persistent service
+        await _persistentService.disconnect();
         setState(() {
           _connectionStatus = null;
           _tunnelPresets = [];
@@ -144,7 +154,7 @@ class _SettingsState extends State<Settings> {
           ),
         );
       } else {
-        // Connect
+        // Connect using persistent service
         final ip = _ipController.text.trim();
         final port = int.tryParse(_portController.text.trim()) ?? 3001;
 
@@ -152,7 +162,7 @@ class _SettingsState extends State<Settings> {
           throw Exception('IP address is required');
         }
 
-        final connected = await _tunnelService.connect(ip, port: port);
+        final connected = await _persistentService.connect(ip, port: port);
 
         if (connected) {
           await _loadPresets();
@@ -191,10 +201,10 @@ class _SettingsState extends State<Settings> {
 
       // Try to start from preset first, fallback to manual creation
       try {
-        tunnel = await _tunnelService.startTunnelFromPreset(preset.id);
+        tunnel = await _persistentService.startTunnelFromPreset(preset.id);
       } catch (e) {
         // Fallback to manual tunnel creation
-        tunnel = await _tunnelService.startTunnel(
+        tunnel = await _persistentService.startTunnel(
           port: preset.port,
           name: preset.name,
           protocol: preset.protocol ?? 'http',
@@ -225,6 +235,60 @@ class _SettingsState extends State<Settings> {
     }
   }
 
+  Future<void> _createPreset({
+    required String name,
+    required String description,
+    required int port,
+    required bool isHotReloadEnabled,
+    required Color accentColor,
+  }) async {
+    try {
+      final preset = TunnelPreset(
+        id: name.toLowerCase().replaceAll(' ', '_'),
+        name: name,
+        description: description,
+        port: port,
+        isHotReloadEnabled: isHotReloadEnabled,
+        accentColor: accentColor,
+      );
+
+      final createdPreset = await _persistentService.createPreset(preset);
+
+      if (createdPreset != null) {
+        setState(() {
+          _tunnelPresets.add(createdPreset);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Preset "$name" created successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Add locally if API fails
+        setState(() {
+          _tunnelPresets.add(preset);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Preset "$name" created locally'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to create preset: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Rest of your methods remain the same...
   void _showCreatePresetDialog() {
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
@@ -349,59 +413,6 @@ class _SettingsState extends State<Settings> {
     );
   }
 
-  Future<void> _createPreset({
-    required String name,
-    required String description,
-    required int port,
-    required bool isHotReloadEnabled,
-    required Color accentColor,
-  }) async {
-    try {
-      final preset = TunnelPreset(
-        id: name.toLowerCase().replaceAll(' ', '_'),
-        name: name,
-        description: description,
-        port: port,
-        isHotReloadEnabled: isHotReloadEnabled,
-        accentColor: accentColor,
-      );
-
-      final createdPreset = await _tunnelService.createPreset(preset);
-
-      if (createdPreset != null) {
-        setState(() {
-          _tunnelPresets.add(createdPreset);
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Preset "$name" created successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        // Add locally if API fails
-        setState(() {
-          _tunnelPresets.add(preset);
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Preset "$name" created locally'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to create preset: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
   String _getTimeAgo(String dateTimeString) {
     try {
       final dateTime = DateTime.parse(dateTimeString);
@@ -495,6 +506,7 @@ class _SettingsState extends State<Settings> {
     );
   }
 
+  // Rest of your build methods remain exactly the same...
   Widget _buildConnectionSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

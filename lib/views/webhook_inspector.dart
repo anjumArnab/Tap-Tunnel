@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tap_tunnel/models/connection_status.dart';
-import 'package:tap_tunnel/services/tap_tunnel_services.dart';
+import 'package:tap_tunnel/services/persistent_connection_service.dart';
 import 'dart:async';
 import '../models/recent_webhook.dart';
 import '../models/webhook_status.dart';
@@ -13,7 +13,8 @@ class WebhookInspectorPage extends StatefulWidget {
 }
 
 class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
-  final TapTunnelService _tapTunnelService = TapTunnelService();
+  final PersistentConnectionService _persistentService =
+      PersistentConnectionService();
 
   WebhookStatus _webhookStatus = const WebhookStatus(
     status: 'Connecting to webhook listener...',
@@ -41,14 +42,19 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
   void dispose() {
     _webhookSubscription?.cancel();
     _connectionSubscription?.cancel();
-    _tapTunnelService.dispose();
+    // Don't dispose the persistent service - it's a singleton
     super.dispose();
   }
 
   Future<void> _initializeService() async {
     try {
-      // Listen to real-time webhook events
-      _webhookSubscription = _tapTunnelService.webhooksStream.listen((webhook) {
+      // Initialize the persistent service if not already done
+      await _persistentService.initialize();
+
+      // Listen to real-time webhook events from persistent service
+      _webhookSubscription = _persistentService.webhooksStream.listen((
+        webhook,
+      ) {
         setState(() {
           _recentWebhooks.insert(0, webhook);
           // Keep only the last 50 webhooks
@@ -58,8 +64,8 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         });
       });
 
-      // Listen to connection status changes
-      _connectionSubscription = _tapTunnelService.connectionStream.listen((
+      // Listen to connection status changes from persistent service
+      _connectionSubscription = _persistentService.connectionStream.listen((
         connectionStatus,
       ) {
         setState(() {
@@ -81,6 +87,18 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         });
       });
 
+      // Get initial connection status
+      setState(() {
+        final connectionStatus = _persistentService.connectionStatus;
+        if (connectionStatus?.isConnected == true) {
+          _webhookStatus = _webhookStatus.copyWith(
+            status: 'Listening for webhooks',
+            description: 'Connected to webhook listener',
+            isListening: true,
+          );
+        }
+      });
+
       // Load initial webhook data
       await _loadWebhookData();
 
@@ -98,8 +116,8 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
 
   Future<void> _loadWebhookData() async {
     try {
-      // Fetch recent webhooks from the service
-      final webhooks = await _tapTunnelService.getWebhooks();
+      // Fetch recent webhooks from the persistent service
+      final webhooks = await _persistentService.getWebhooks();
       if (webhooks != null) {
         setState(() {
           _recentWebhooks = webhooks;
@@ -107,8 +125,8 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
         });
       }
 
-      // Update webhook status based on service connection
-      if (_tapTunnelService.isConnected) {
+      // Update webhook status based on persistent service connection
+      if (_persistentService.isConnected) {
         setState(() {
           _webhookStatus = _webhookStatus.copyWith(
             status: 'Listening for webhooks',
@@ -439,7 +457,7 @@ class _WebhookInspectorPageState extends State<WebhookInspectorPage> {
           trailing: Switch(
             value: _webhookStatus.isListening,
             onChanged:
-                _tapTunnelService.isConnected
+                _persistentService.isConnected
                     ? (value) => _onWebhookStatusToggle()
                     : null,
             activeColor: const Color(0xFF10B981),

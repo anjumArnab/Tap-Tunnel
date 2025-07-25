@@ -7,7 +7,7 @@ import '../models/request_data.dart';
 import '../models/traffic_stats.dart';
 import '../models/chart_data.dart';
 import '../models/connection_status.dart';
-import '../services/tap_tunnel_services.dart';
+import '../services/persistent_connection_service.dart';
 
 class TrafficMonitorScreen extends StatefulWidget {
   const TrafficMonitorScreen({super.key});
@@ -17,7 +17,9 @@ class TrafficMonitorScreen extends StatefulWidget {
 }
 
 class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
-  final TapTunnelService _tapTunnelService = TapTunnelService();
+  // Use the persistent service instead of creating a new instance
+  final PersistentConnectionService _persistentService =
+      PersistentConnectionService();
 
   TrafficStats _stats = TrafficStats(
     totalRequests: 0,
@@ -33,7 +35,7 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
   String? _errorMessage;
   bool _isConnected = false;
 
-  // Stream subscriptions
+  // Stream subscriptions - now using persistent service streams
   StreamSubscription<RequestData>? _requestSubscription;
   StreamSubscription<TrafficStats>? _statsSubscription;
   StreamSubscription<ConnectionStatus>? _connectionSubscription;
@@ -55,14 +57,21 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
     _statsSubscription?.cancel();
     _connectionSubscription?.cancel();
     _chartUpdateTimer?.cancel();
-    _tapTunnelService.dispose();
+    // Don't dispose the persistent service - it should remain alive
     super.dispose();
   }
 
   Future<void> _initializeService() async {
     try {
-      // Listen to real-time request data
-      _requestSubscription = _tapTunnelService.requestsStream.listen((request) {
+      // Ensure the persistent service is initialized
+      if (!_persistentService.isInitialized) {
+        await _persistentService.initialize();
+      }
+
+      // Listen to real-time request data from persistent service
+      _requestSubscription = _persistentService.requestsStream.listen((
+        request,
+      ) {
         setState(() {
           _recentRequests.insert(0, request);
           // Keep only the last 100 requests
@@ -73,15 +82,15 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
         _updateChartData(request);
       });
 
-      // Listen to traffic statistics updates
-      _statsSubscription = _tapTunnelService.statsStream.listen((stats) {
+      // Listen to traffic statistics updates from persistent service
+      _statsSubscription = _persistentService.statsStream.listen((stats) {
         setState(() {
           _stats = stats;
         });
       });
 
-      // Listen to connection status changes
-      _connectionSubscription = _tapTunnelService.connectionStream.listen((
+      // Listen to connection status changes from persistent service
+      _connectionSubscription = _persistentService.connectionStream.listen((
         connectionStatus,
       ) {
         setState(() {
@@ -110,8 +119,8 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
 
   Future<void> _loadInitialData() async {
     try {
-      // Fetch recent requests
-      final requests = await _tapTunnelService.getRequests(limit: 50);
+      // Fetch recent requests from persistent service
+      final requests = await _persistentService.getRequests(limit: 50);
       if (requests != null) {
         setState(() {
           _recentRequests = requests;
@@ -121,8 +130,8 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
         _buildInitialChartData(requests);
       }
 
-      // Fetch current statistics
-      final stats = await _tapTunnelService.getStats();
+      // Fetch current statistics from persistent service
+      final stats = await _persistentService.getStats();
       if (stats != null) {
         setState(() {
           _stats = stats;
@@ -130,7 +139,7 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
       }
 
       setState(() {
-        _isConnected = _tapTunnelService.isConnected;
+        _isConnected = _persistentService.isConnected;
         _errorMessage = null;
       });
     } catch (e) {
@@ -638,29 +647,19 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
   Widget _buildRequestItem(RequestData request) {
     Color statusColor = _getStatusColor(request.statusCode);
     Color methodColor = _getMethodColor(request.method);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        elevation: 1,
-        child: ListTile(
-          leading: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: statusColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          title: Row(
-            children: [
-              Container(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: ListTile(
+        leading: CircleAvatar(radius: 4, backgroundColor: statusColor),
+        title: Row(
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: methodColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: methodColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
                 child: Text(
                   request.method,
                   style: TextStyle(
@@ -670,36 +669,33 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  request.endpoint,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
-                  ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                request.endpoint,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
                 ),
               ),
-            ],
-          ),
-          subtitle: Text(
-            '${request.statusCode} • ${request.responseTime} • ${request.timeAgo}',
-            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-          ),
-          trailing: Text(
-            '${request.statusCode}',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: statusColor,
             ),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 4,
+          ],
+        ),
+        subtitle: Text(
+          '${request.statusCode} • ${request.responseTime} • ${request.timeAgo}',
+          style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+        ),
+        trailing: Text(
+          '${request.statusCode}',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: statusColor,
           ),
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       ),
     );
   }
