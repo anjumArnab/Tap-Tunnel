@@ -650,7 +650,7 @@ class _TrafficMonitorScreenState extends State<TrafficMonitorScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: ListTile(
-        leading: CircleAvatar(radius: 4, backgroundColor: statusColor),
+        leading: CircleAvatar(radius: 5, backgroundColor: statusColor),
         title: Row(
           children: [
             DecoratedBox(

@@ -536,66 +536,57 @@ class _HomepageState extends State<Homepage> {
   }
 
   Widget _buildTunnelCard(ActiveTunnel tunnel) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      child: ListTile(
-        leading: Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: tunnel.statusColor,
-            shape: BoxShape.circle,
-          ),
-        ),
-        title: Text(
-          tunnel.tunnelName,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              tunnel.tunnelUrl,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF3B82F6)),
-            ),
-            Text(
-              'Port ${tunnel.tunnelPort} • ${tunnel.requestsText}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-            ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              onPressed: () => _onCopyTunnelUrl(tunnel.tunnelUrl),
-              child: const Text(
-                'COPY',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF3B82F6),
-                ),
-              ),
-            ),
-            if (tunnel.isActive)
-              IconButton(
-                onPressed: () => _onStopTunnel(tunnel),
-                icon: const Icon(
-                  Icons.stop,
-                  color: Color(0xFFEF4444),
-                  size: 18,
-                ),
-              ),
-          ],
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        isThreeLine: true,
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 5,
+        backgroundColor:
+            tunnel.isActive ? const Color(0xFF10B981) : const Color(0xFF9CA3AF),
       ),
+
+      title: Text(
+        tunnel.tunnelName,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tunnel.tunnelUrl,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF3B82F6)),
+          ),
+          Text(
+            'Port ${tunnel.tunnelPort} • ${tunnel.requestsText}',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+          ),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(
+            onPressed: () => _onCopyTunnelUrl(tunnel.tunnelUrl),
+            child: const Text(
+              'COPY',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF3B82F6),
+              ),
+            ),
+          ),
+          if (tunnel.isActive)
+            IconButton(
+              onPressed: () => _onStopTunnel(tunnel),
+              icon: const Icon(Icons.stop, color: Color(0xFFEF4444), size: 18),
+            ),
+        ],
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      isThreeLine: true,
     );
   }
 }
